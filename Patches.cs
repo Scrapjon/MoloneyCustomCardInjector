@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using HarmonyLib;
 using UnityEngine;
@@ -17,8 +18,6 @@ public class Patches
 {
     private static string ReadFile(string key)
     {
-        
-        
         string docPath = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
         docPath = Path.Combine(docPath, "Guilty as Sock Custom Decks");
         Directory.CreateDirectory(docPath);
@@ -26,10 +25,44 @@ public class Patches
         if (File.Exists(Path.Combine(filePath)))
         {
             using StreamReader inputFile = new StreamReader(filePath);
-            return inputFile.ToString();
+            return inputFile.ReadToEnd();
         } 
         return PlayerPrefs.GetString(key);
-    } 
+    }
+
+
+
+    [HarmonyPatch(typeof(DeckList), nameof(DeckList.LoadDeckList))]
+    [HarmonyPrefix]
+    static bool InjectDeckList(DeckList __instance, ref Task __result)
+    {
+        __result = InjectDeckListAsync(__instance);
+        return false;
+    }
+    public static async Task InjectDeckListAsync(DeckList deckListObj)
+    {
+        {
+            var deckList = await LoadCustom("CUSTOM_DECKS");
+            if (deckList is { Count: > 0 })
+            {
+                deckListObj.InitList(deckList);
+            }
+            
+        }
+
+    }
+    
+    static Task<List<EvidenceDeck>> LoadCustom(string key)
+    {
+        var fileReaderLogSource = Logger.CreateLogSource("FileReader");
+        Logger.Sources.Add(fileReaderLogSource);
+        fileReaderLogSource.LogInfo("FileReader");
+        
+        string str = ReadFile(key);
+        var output = !string.IsNullOrEmpty(str) ? Task.FromResult<List<EvidenceDeck>>(JsonConvert.DeserializeObject<List<EvidenceDeck>>(str)) : Task.FromResult<List<EvidenceDeck>>(default (List<EvidenceDeck>));
+        return output;
+    }
+  
     private static string WriteFile(string key,string value) // file writing logic
     {
         
@@ -42,24 +75,9 @@ public class Patches
         return $"Saved to: {outputPath}";
     }
     
-    [HarmonyPatch(typeof(PlayerPrefClient), nameof(PlayerPrefClient.Load))]
-    [HarmonyPatch(new Type[] { typeof(string) })]
-    [HarmonyPrefix]
-    static bool LoadCustom(ref Task __result, string key)
-    {
-        var fileReaderLogSource = Logger.CreateLogSource("FileReader");
-        Logger.Sources.Add(fileReaderLogSource);
-        fileReaderLogSource.LogInfo("FileReader");
-        
-        string str = ReadFile(key);
-        if (!string.IsNullOrEmpty(str))
-        {
-            __result = Task.FromResult(JsonConvert.DeserializeObject(str));
-            return false;
-        }
-        return true;
-    }
-    
+  
+    [HarmonyFinalizer]
+   
     
     [HarmonyPatch(typeof(PlayerPrefClient), nameof(PlayerPrefClient.Save))]
     [HarmonyPatch(new Type[] { typeof(string), typeof(object) })]
